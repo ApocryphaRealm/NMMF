@@ -465,20 +465,57 @@ namespace
     bool SetTextBlock(UObject* tb, const std::wstring& text)
     {
         UFunction* fn = tb ? Reflect::Get().Find(tb, L"SetText") : nullptr;
-        if (!fn) return false;
+        if (!fn)
+        {
+            static bool said = false;
+            if (!said) NRN_WARN("SetText route: no SetText on the text block (%p)", tb);
+            said = true;
+            return false;
+        }
         FProperty* param = nullptr;
         ForEachProp(reinterpret_cast<UStruct*>(fn), [&](FProperty* p) {
             if (!param) param = p;
         });
         uint16_t ps = Reflect::Get().ParmsSizeOf(tb, L"SetText");
-        if (!param || ps < 0x18 || ps > 0x40) return false;
-        // A real FText made by UE4SS and copied into the parameter block (the analysis showed the old INVTEXT import into
-        // an uninitialised buffer failed every time: "wrote 1 ok 0")
-        if (RC::Unreal::FText::StaticSize() > 0x40) return false;
-        RC::Unreal::FText ft(text.c_str());
+        // an FText is 16 bytes in this engine build (SetText parms 16) - the old guard wanted 0x18 and refused every call
+        if (!param || ps < 0x10 || ps > 0x40)
+        {
+            static bool said = false;
+            if (!said) NRN_WARN("SetText route: SetText parms %d, first param %p - refused", ps, param);
+            said = true;
+            return false;
+        }
+        // The plan after five attempts (docs/DECIMAL-DISPLAY-ANALYSIS.txt): the ENGINE makes the text -
+        // KismetTextLibrary.Conv_StringToText(FString @0) -> FText @0x10 - and those bytes go into SetText's parameter
+        // block as they are (SetText copies them into the TextBlock). The made FText is not released: a small leak per
+        // change while the screen is up. Every step is logged once so a refusal is seen (the earlier helper never ran).
+        static UObject* ktl = FindObj(L"/Script/Engine.Default__KismetTextLibrary");
+        uint16_t cps = ktl ? Reflect::Get().ParmsSizeOf(ktl, L"Conv_StringToText") : 0;
+        static bool told = false;
+        if (!told)
+        {
+            told = true;
+            NRN_INFO("SetText route: KismetTextLibrary %p, Conv_StringToText parms %d, SetText parms %d, its param at +%d", ktl, cps, ps,
+                     param->GetOffset_Internal());
+        }
+        if (!ktl || cps < 0x20 || cps > 0x30) return false; // FString @0 (16) + FText @0x10 (16)
+        struct FStr
+        {
+            const wchar_t* data;
+            int32_t num, max;
+        } str{text.c_str(), static_cast<int32_t>(text.size() + 1), static_cast<int32_t>(text.size() + 1)};
+        Buf conv;
+        std::memcpy(conv.b, &str, sizeof(str));
+        if (!Reflect::Get().Call(ktl, L"Conv_StringToText", conv.b, cps, sizeof(conv.b)))
+        {
+            NRN_WARN("Conv_StringToText refused");
+            return false;
+        }
         Buf b;
-        ft.CopyBorrowedTo(b.b + param->GetOffset_Internal());
-        return Reflect::Get().Call(tb, L"SetText", b.b, ps, sizeof(b.b));
+        std::memcpy(b.b + param->GetOffset_Internal(), conv.b + 0x10, static_cast<size_t>(cps) - 0x10);
+        bool ok = Reflect::Get().Call(tb, L"SetText", b.b, ps, sizeof(b.b));
+        if (!ok) NRN_WARN("SetText refused (parms %d)", ps);
+        return ok;
     }
 
     int OptionCount(UObject* e)
@@ -672,7 +709,7 @@ namespace
                             if (nowMs < watchUntil[key])
                             {
                                 std::wstring after = tp ? Export(tp, reinterpret_cast<uint8_t*>(tb) + tp->GetOffset_Internal(), tb) : L"";
-                                NRN_INFO("ANALYSIS %s: value %s, export before '%s', want '%s', same %d, wrote %d ok %d, export after '%s'", key.c_str(),
+                                NRN_DEBUG("ANALYSIS %s: value %s, export before '%s', want '%s', same %d, wrote %d ok %d, export after '%s'", key.c_str(),
                                          Text(*c).c_str(), Narrow(shownText).c_str(), Narrow(want).c_str(), same, wrote, ok, Narrow(after).c_str());
                             }
                         }

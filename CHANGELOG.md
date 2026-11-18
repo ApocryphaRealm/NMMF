@@ -11,3 +11,6 @@
 
 ### Changed (2026-11-18, refinement - partial)
 - A slider with decimals shows them when the Options screen opens (the value is no longer re-sent every poll because of float rounding). After a click the number still shows rounded - known, under analysis.
+
+### Fixed (2026-11-18)
+- A slider with decimals shows them after it is moved too: the number is written as an engine-made text (Conv_StringToText -> SetText). The old write had been refused by a size check that expected a 24-byte FText; this engine build uses 16.

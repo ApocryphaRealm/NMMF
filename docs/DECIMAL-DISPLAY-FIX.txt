@@ -1,0 +1,5 @@
+Reason: the planned route fixed NMMF's decimal display - after a click the tenths slider shows its decimal (1.5, 0.7) and keeps it; the logged guards showed the real cause: SetText's parameter block is 16 bytes in this engine build and NMMF's guard wanted 24, so its text write had been refused every time.
+Batch B-20261118-030915-ae3c, 2026-11-18 03:09-03:20 (Main Agent). Two launches.
+- Launch 1 (every guard logged): "SetText route: SetText parms 16, first param ... - refused" - an FText is 16 bytes here; the guard (ps >= 0x18) refused every call, so no NMMF text write ever reached the screen (all five earlier attempts were behind this guard).
+- Launch 2 (sizes from the engine: SetText 16; KismetTextLibrary.Conv_StringToText parms 32 = FString @0 + FText @0x10): the engine makes the text, its bytes go into SetText's block. Click to 1.5: export INVTEXT("1.5"), Lua GetText "1.5"; click to 0.7: INVTEXT("0.7"), "0.7"; frame: "0.7" on the row. Whole-number slider still "8". Game running.
+- The engine-made FText from Conv_StringToText is not released (a small leak per change while the Options screen is up). The analysis lines are now debug level.
