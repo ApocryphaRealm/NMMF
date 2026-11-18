@@ -41,5 +41,6 @@ per control (`WidgetBlueprintLibrary.Create`, Name/Description as `INVTEXT(...)`
 are read and a change is snapped, stored and announced.
 
 0.1.0 tested in game (TEST-RESULT-0.1.0.txt). A slider with decimals writes its own number as an engine-made text
-(the game's row shows whole numbers once moved; docs/DECIMAL-DISPLAY-FIX.txt). Not yet: choices, keybinds, headers, translations (eleven languages), per-save values over a save/load, a
-controller pass.
+(the game's row shows whole numbers once moved; docs/DECIMAL-DISPLAY-FIX.txt). Since then: choice rows, section headers, translated labels and per-save values over a real save/load
+(docs/TEST-RESULT-0.2-additions.txt). Not yet: a keybind row (Norse has none - needs the editor-built route), a
+controller pass, translation files for each language (per mod).

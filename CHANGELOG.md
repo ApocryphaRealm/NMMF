@@ -14,3 +14,10 @@
 
 ### Fixed (2026-11-18)
 - A slider with decimals shows them after it is moved too: the number is written as an engine-made text (Conv_StringToText -> SetText). The old write had been refused by a size check that expected a 24-byte FText; this engine build uses 16.
+
+### Added (2026-11-18, second pass - tested in game: docs/TEST-RESULT-0.2-additions.txt)
+- Choice rows (the game's Cycle row), stored by the option's name: NMMF_AddChoice, NMMF_GetIndex, Choice = in pages.
+- Section headers (the game's Banner row): NMMF_AddHeader, Header = in pages; each mod's settings start under its title.
+- Translations: a label "$key" is read from Translations/<Mod>_<language>.txt (AMF format), language from the game's culture; NMMF_GetLanguage.
+### Tested
+- Per-save values over a real save and load (NorseCoSave).

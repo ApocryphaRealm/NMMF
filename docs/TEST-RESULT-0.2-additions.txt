@@ -1,0 +1,8 @@
+Reason: NMMF's additions work in game - section headers (the game's Banner row, plus each mod's title automatically), a choice row stored by name, a label translated from a Translations file, and a per-save value restored by loading a save.
+Batch B-20261118-032610-cdc1, 2026-11-18 03:26-03:34 (Main Agent). One launch.
+- pages\test-page.ini (0.2 version) + Translations\NMMFTest_english.txt (UTF-16LE, "$NMMFTest_Example<TAB>Example switch (translated)").
+- Log: "registered header NMMFTest._header1: Choices and saves", "registered choice NMMFTest.sStyle (global) = Balanced (default)", "language: culture 'en' -> english", "Mods tab added ...: 6 row(s)", "NMMFTest.sStyle: choice set to option 1 (Balanced)".
+- Frame (title screen, Options, MODS): header "NMMF test" (the mod's title), "Example switch (translated)" On, whole slider 5, tenths slider "1.0", header "Choices and saves", "Fighting style" Balanced, "Per-save switch" Off - all in the game's own rows.
+- Choice: its right arrow -> "NMMFTest.sStyle = Reckless"; settings\NMMFTest.ini: sStyle=Reckless.
+- Per save (CombatTestMap): nmmf.set bThisSave true -> LoadSaveSubsystem.SaveGame("NMMFTest") -> nmmf.set false -> LoadGame("NMMFTest") -> after the load "NMMFTest.bThisSave = true" (NorseCoSave owner NMMF.NMMFTest, reloaded on GameLoaded). Game running.
+- Not built: a keybind row (Norse has no keybind row: needs the editor-built route), a controller pass (no virtual pad here), translation files for the other ten languages (per mod; the mechanism is in).

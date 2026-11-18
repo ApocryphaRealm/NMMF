@@ -13,7 +13,8 @@
 // slider). A slider's step is one unit of its last shown digit: decimals 0 -> 1, 1 -> 0.1, 2 -> 0.01.
 // Values: NMMF_GLOBAL in ue4ss\Mods\NMMF\settings\<mod>.ini; NMMF_PER_SAVE in the save's NorseCoSave side file
 // (owner "NMMF.<mod>"). Registration may come before the menu exists; the rows are built whenever an Options screen
-// is. 0.1.0: switches and sliders; choices, keybinds and headers are refused (logged) until 0.2.
+// is. 0.2: switches, sliders, choices, headers; a label "$key" is translated from Translations/<Mod>_<language>.txt.
+// Keybinds are not built yet (Norse has no keybind row).
 #pragma once
 
 #include <Windows.h>
@@ -36,6 +37,11 @@ extern "C"
     typedef int (*NMMF_AddSwitchFn)(const char* mod, const char* page, const char* id, const char* label, const char* desc, int defaultOn, int scope);
     typedef int (*NMMF_AddSliderFn)(const char* mod, const char* page, const char* id, const char* label, const char* desc, double min, double max,
                                     int decimals, double defaultValue, int scope);
+    typedef int (*NMMF_AddChoiceFn)(const char* mod, const char* page, const char* id, const char* label, const char* desc,
+                                    const char* const* options, int count, int defaultIndex, int scope);
+    typedef int (*NMMF_AddHeaderFn)(const char* mod, const char* page, const char* label);
+    typedef int (*NMMF_GetIndexFn)(const char* mod, const char* id);
+    typedef const char* (*NMMF_GetLanguageFn)(void);
     typedef int (*NMMF_GetBoolFn)(const char* mod, const char* id);
     typedef double (*NMMF_GetNumberFn)(const char* mod, const char* id);
     typedef int (*NMMF_SetFn)(const char* mod, const char* id, const char* value);
@@ -53,6 +59,10 @@ namespace nmmf
         NMMF_RegisterPageFn RegisterPage;
         NMMF_AddSwitchFn AddSwitch;
         NMMF_AddSliderFn AddSlider;
+        NMMF_AddChoiceFn AddChoice;     // 0.2
+        NMMF_AddHeaderFn AddHeader;     // 0.2
+        NMMF_GetIndexFn GetIndex;       // 0.2
+        NMMF_GetLanguageFn GetLanguage; // 0.2: english, french, german, ...
         NMMF_GetBoolFn GetBool;
         NMMF_GetNumberFn GetNumber;
         NMMF_SetFn Set;
@@ -80,6 +90,10 @@ namespace nmmf
         t.RegisterPage = reinterpret_cast<NMMF_RegisterPageFn>(get("NMMF_RegisterPage"));
         t.AddSwitch = reinterpret_cast<NMMF_AddSwitchFn>(get("NMMF_AddSwitch"));
         t.AddSlider = reinterpret_cast<NMMF_AddSliderFn>(get("NMMF_AddSlider"));
+        t.AddChoice = reinterpret_cast<NMMF_AddChoiceFn>(get("NMMF_AddChoice"));
+        t.AddHeader = reinterpret_cast<NMMF_AddHeaderFn>(get("NMMF_AddHeader"));
+        t.GetIndex = reinterpret_cast<NMMF_GetIndexFn>(get("NMMF_GetIndex"));
+        t.GetLanguage = reinterpret_cast<NMMF_GetLanguageFn>(get("NMMF_GetLanguage"));
         t.GetBool = reinterpret_cast<NMMF_GetBoolFn>(get("NMMF_GetBool"));
         t.GetNumber = reinterpret_cast<NMMF_GetNumberFn>(get("NMMF_GetNumber"));
         t.Set = reinterpret_cast<NMMF_SetFn>(get("NMMF_Set"));

@@ -19,6 +19,7 @@
 #include "NMMF.h"
 
 #include <cmath>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <set>
@@ -52,7 +53,9 @@ namespace
     enum class CKind
     {
         Switch,
-        Slider
+        Slider,
+        Choice, // 0.2: the game's Cycle row; value = the option's index, stored as the option's text
+        Header  // 0.2: the game's Banner row; no value
     };
     struct Control
     {
@@ -62,6 +65,7 @@ namespace
         double min = 0, max = 1, step = 1, def = 0;
         int decimals = 0;
         double value = 0;
+        std::vector<std::string> options; // a choice's options (labels; "$key" = a translation key)
     };
     struct Page
     {
@@ -88,6 +92,12 @@ namespace
     std::string Text(const Control& c)
     {
         if (c.kind == CKind::Switch) return c.value != 0 ? "true" : "false";
+        if (c.kind == CKind::Choice)
+        {
+            int i = static_cast<int>(c.value);
+            return i >= 0 && i < static_cast<int>(c.options.size()) ? c.options[static_cast<size_t>(i)] : std::to_string(i);
+        }
+        if (c.kind == CKind::Header) return "";
         char b[64];
         snprintf(b, sizeof(b), "%.*f", c.decimals, c.value);
         return b;
@@ -95,6 +105,8 @@ namespace
     double Snap(const Control& c, double v)
     {
         if (c.kind == CKind::Switch) return v != 0 ? 1 : 0;
+        if (c.kind == CKind::Choice) return c.options.empty() ? 0 : std::clamp(std::round(v), 0.0, static_cast<double>(c.options.size() - 1));
+        if (c.kind == CKind::Header) return 0;
         v = std::clamp(v, c.min, c.max);
         double steps = std::round((v - c.min) / c.step);
         double r = c.min + steps * c.step;
@@ -104,6 +116,12 @@ namespace
     double Parse(const Control& c, const std::string& s)
     {
         if (c.kind == CKind::Switch) return (_stricmp(s.c_str(), "true") == 0 || s == "1" || _stricmp(s.c_str(), "on") == 0) ? 1 : 0;
+        if (c.kind == CKind::Choice)
+        {
+            for (size_t i = 0; i < c.options.size(); ++i)
+                if (_stricmp(c.options[i].c_str(), s.c_str()) == 0) return static_cast<double>(i);
+            return atof(s.c_str()); // an index
+        }
         return atof(s.c_str());
     }
 
@@ -130,7 +148,7 @@ namespace
         fs::create_directories(g_mod / "settings", ec);
         std::string s = "; NMMF settings for " + mod + " - written by the Options screen's Mods tab. Per-save values are not here.\n[" + mod + "]\n";
         for (const auto& c : g_controls)
-            if (c.mod == mod && c.scope == NMMF_GLOBAL) s += c.id + "=" + Text(c) + "\n";
+            if (c.mod == mod && c.scope == NMMF_GLOBAL && c.kind != CKind::Header) s += c.id + "=" + Text(c) + "\n";
         FILE* f = nullptr;
         if (_wfopen_s(&f, IniOf(mod).c_str(), L"wb") == 0 && f)
         {
@@ -214,6 +232,17 @@ namespace
             NRN_WARN("%s.%s is already registered - refused", c.mod.c_str(), c.id.c_str());
             return 0;
         }
+        if (c.kind == CKind::Header)
+        {
+            g_controls.push_back(c);
+            NRN_INFO("registered header %s.%s: %s", c.mod.c_str(), c.id.c_str(), c.label.c_str());
+            return 1;
+        }
+        if (c.kind == CKind::Choice && c.options.size() < 2)
+        {
+            NRN_WARN("%s.%s: a choice needs at least two options - refused", c.mod.c_str(), c.id.c_str());
+            return 0;
+        }
         if (c.kind == CKind::Slider)
         {
             c.decimals = std::clamp(c.decimals, 0, 4);
@@ -248,9 +277,87 @@ namespace
         }
         g_controls.push_back(c);
         if (c.scope == NMMF_GLOBAL && !known) WriteIni(c.mod); // rule 16: defaults written on the first run
-        NRN_INFO("registered %s %s.%s (%s) = %s%s", c.kind == CKind::Switch ? "switch" : "slider", c.mod.c_str(), c.id.c_str(),
+        NRN_INFO("registered %s %s.%s (%s) = %s%s", c.kind == CKind::Switch ? "switch" : c.kind == CKind::Slider ? "slider" : "choice", c.mod.c_str(), c.id.c_str(),
                  c.scope == NMMF_GLOBAL ? "global" : "per save", Text(c).c_str(), known ? "" : " (default)");
         return 1;
+    }
+
+    std::wstring PartAt(const std::vector<std::wstring>& p, size_t i)
+    {
+        return i < p.size() ? p[i] : std::wstring();
+    }
+
+    // ---- translations (0.2): a label "$key" is looked up in Translations\<Mod>_<language>.txt (one "$key<TAB>text" per
+    // line, UTF-16LE with a BOM as AMF writes them, or UTF-8), then in <Mod>_english.txt, then shown as the key without $.
+    // The language follows the game's culture (KismetInternationalizationLibrary.GetCurrentCulture).
+    std::string Language()
+    {
+        static std::string lang;
+        if (!lang.empty()) return lang;
+        lang = "english";
+        static UObject* kil = FindObj(L"/Script/Engine.Default__KismetInternationalizationLibrary");
+        if (kil && Reflect::Get().ParmsSizeOf(kil, L"GetCurrentCulture") == 16)
+        {
+            Buf b;
+            if (Reflect::Get().Call(kil, L"GetCurrentCulture", b.b, 16, sizeof(b.b)))
+            {
+                const wchar_t* data = nullptr;
+                std::memcpy(&data, b.b, 8);
+                std::wstring cul = data ? Lower(std::wstring(data)) : L"";
+                static const std::pair<const wchar_t*, const char*> map[] = {{L"fr", "french"}, {L"de", "german"}, {L"it", "italian"},
+                                                                            {L"es", "spanish"}, {L"pl", "polish"}, {L"ru", "russian"},
+                                                                            {L"cs", "czech"}, {L"ja", "japanese"}, {L"zh", "chinese"},
+                                                                            {L"pt", "portuguese"}, {L"en", "english"}};
+                for (const auto& [pre, name] : map)
+                    if (cul.rfind(pre, 0) == 0)
+                    {
+                        lang = name;
+                        break;
+                    }
+                NRN_INFO("language: culture '%s' -> %s", Narrow(cul).c_str(), lang.c_str());
+            }
+        }
+        return lang;
+    }
+    std::map<std::string, std::string> LoadTranslations(const std::string& mod, const std::string& lang)
+    {
+        std::map<std::string, std::string> out;
+        fs::path f = g_mod / "Translations" / (mod + "_" + lang + ".txt");
+        std::ifstream in(f, std::ios::binary);
+        if (!in) return out;
+        std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::wstring text;
+        if (raw.size() >= 2 && static_cast<uint8_t>(raw[0]) == 0xFF && static_cast<uint8_t>(raw[1]) == 0xFE)
+            text.assign(reinterpret_cast<const wchar_t*>(raw.data() + 2), (raw.size() - 2) / 2);
+        else
+        {
+            if (raw.size() >= 3 && static_cast<uint8_t>(raw[0]) == 0xEF) raw = raw.substr(3);
+            text = Widen(raw);
+        }
+        size_t pos = 0;
+        while (pos < text.size())
+        {
+            size_t nl = text.find(L'\n', pos);
+            std::wstring line = text.substr(pos, nl == std::wstring::npos ? std::wstring::npos : nl - pos);
+            pos = nl == std::wstring::npos ? text.size() : nl + 1;
+            if (!line.empty() && line.back() == L'\r') line.pop_back();
+            size_t tab = line.find(L'\t');
+            if (line.empty() || line[0] != L'$' || tab == std::wstring::npos) continue;
+            out[Narrow(Lower(line.substr(0, tab)))] = Narrow(line.substr(tab + 1));
+        }
+        return out;
+    }
+    std::string Tr(const std::string& mod, const std::string& text)
+    {
+        if (text.empty() || text[0] != '$') return text;
+        static std::map<std::string, std::map<std::string, std::string>> cache, english;
+        std::string lang = Language();
+        if (!cache.count(mod)) cache[mod] = LoadTranslations(mod, lang);
+        if (!english.count(mod)) english[mod] = lang == "english" ? cache[mod] : LoadTranslations(mod, "english");
+        std::string key = Narrow(Lower(Widen(text)));
+        if (auto it = cache[mod].find(key); it != cache[mod].end()) return it->second;
+        if (auto it = english[mod].find(key); it != english[mod].end()) return it->second;
+        return text.substr(1);
     }
 
     // ---- pages\*.ini: pages for mods with no DLL
@@ -312,7 +419,21 @@ namespace
                     c.def = atof(at(6).c_str());
                     AddControl(c);
                 }
-                else NRN_WARN("%s: unknown key '%s' (Title, Switch, Slider; Choice and Keybind come in 0.2)", where.c_str(), Narrow(k).c_str());
+                else if (k == L"choice")
+                {
+                    Control c{mod, "Main", at(0), at(1), at(2), CKind::Choice, scope(5)};
+                    for (const auto& o : SplitList(PartAt(p, 3), L','))
+                        if (!o.empty()) c.options.push_back(Narrow(o));
+                    c.def = Parse(c, at(4));
+                    AddControl(c);
+                }
+                else if (k == L"header")
+                {
+                    static int n = 0;
+                    Control c{mod, "Main", "_header" + std::to_string(++n), at(0), "", CKind::Header, NMMF_GLOBAL};
+                    AddControl(c);
+                }
+                else NRN_WARN("%s: unknown key '%s' (Title, Header, Switch, Slider, Choice; Keybind is not built yet)", where.c_str(), Narrow(k).c_str());
             }
         }
     }
@@ -420,10 +541,22 @@ namespace
     {
         static UObject* toggleC = Cls(L"/Game/Norse/UI/Widgets/Core/OptionsMenu/WBP_OptionsEntry_Toggle.WBP_OptionsEntry_Toggle_C");
         static UObject* sliderC = Cls(L"/Game/Norse/UI/Widgets/Core/OptionsMenu/WBP_OptionsEntry_Slider.WBP_OptionsEntry_Slider_C");
-        UObject* e = CreateWidget(menu, c.kind == CKind::Switch ? toggleC : sliderC);
+        static UObject* cycleC = Cls(L"/Game/Norse/UI/Widgets/Core/OptionsMenu/WBP_OptionsEntry_Cycle.WBP_OptionsEntry_Cycle_C");
+        static UObject* bannerC = Cls(L"/Game/Norse/UI/Widgets/Core/OptionsMenu/WBP_OptionsBanner.WBP_OptionsBanner_C");
+        UObject* cls = c.kind == CKind::Switch ? toggleC : c.kind == CKind::Slider ? sliderC : c.kind == CKind::Choice ? cycleC : bannerC;
+        UObject* e = CreateWidget(menu, cls);
         if (!e) return nullptr;
-        SetField(e, L"Name", Quoted(c.label.empty() ? c.id : c.label));
-        SetField(e, L"Description", Quoted(c.desc));
+        SetField(e, L"Name", Quoted(Tr(c.mod, c.label.empty() ? c.id : c.label)));
+        if (c.kind == CKind::Header) return e;
+        SetField(e, L"Description", Quoted(Tr(c.mod, c.desc)));
+        if (c.kind == CKind::Choice)
+        {
+            std::wstring opts = L"(";
+            for (size_t i = 0; i < c.options.size(); ++i) opts += (i ? L"," : L"") + std::wstring(L"(BaseName=") + Quoted(Tr(c.mod, c.options[i])) + L")";
+            SetField(e, L"Options", opts + L")");
+            onIndex = -1; // set once the row is constructed (SetUpChoice)
+            return e;
+        }
         if (c.kind == CKind::Switch)
         {
             onIndex = -1; // learnt in SetUpSwitch, once the row is constructed and has its options
@@ -577,8 +710,22 @@ namespace
         int rows = 0;
         {
             std::lock_guard lk(g_mx);
+            std::string lastMod;
             for (const Control& c : g_controls)
             {
+                if (c.mod != lastMod)
+                {
+                    lastMod = c.mod;
+                    if (c.kind != CKind::Header) // the mod's title as a section header (0.2)
+                    {
+                        std::string title = c.mod;
+                        for (const auto& pg : g_pages)
+                            if (pg.mod == c.mod && !pg.title.empty()) title = pg.title;
+                        Control h{c.mod, c.page, "_title", title, "", CKind::Header, NMMF_GLOBAL};
+                        int unused = 0;
+                        if (UObject* he = MakeRow(menu, h, unused)) Call1(vbox, L"AddChildToVerticalBox", he, 16, 8);
+                    }
+                }
                 int onIndex = 0;
                 UObject* e = MakeRow(menu, c, onIndex);
                 if (!e || !Call1(vbox, L"AddChildToVerticalBox", e, 16, 8))
@@ -586,7 +733,7 @@ namespace
                     NRN_WARN("%s.%s: the row could not be made", c.mod.c_str(), c.id.c_str());
                     continue;
                 }
-                b.rows.push_back({e, IndexOf(e), c.mod, c.id, c.kind, onIndex});
+                if (c.kind != CKind::Header) b.rows.push_back({e, IndexOf(e), c.mod, c.id, c.kind, onIndex});
                 ++rows;
             }
         }
@@ -651,6 +798,23 @@ namespace
                 std::lock_guard lk(g_mx);
                 Control* c = Find(r.mod, r.id);
                 if (!c) continue;
+                if (r.kind == CKind::Choice)
+                {
+                    if (!r.ready)
+                    {
+                        if (OptionCount(r.entry) < static_cast<int>(c->options.size())) continue;
+                        Buf si;
+                        int32_t want = static_cast<int32_t>(c->value);
+                        std::memcpy(si.b, &want, 4);
+                        Reflect::Get().Call(r.entry, L"SetSelectedIndex", si.b, 4, sizeof(si.b));
+                        r.ready = true;
+                        NRN_INFO("%s.%s: choice set to option %d (%s)", c->mod.c_str(), c->id.c_str(), want, Text(*c).c_str());
+                        continue;
+                    }
+                    int idx = -1;
+                    if (ReadField(r.entry, L"CurrentIndex", idx) && idx >= 0) Store(*c, idx);
+                    continue;
+                }
                 if (r.kind == CKind::Switch)
                 {
                     if (!r.ready && !SetUpSwitch(r, *c)) continue;
@@ -810,6 +974,33 @@ extern "C" __declspec(dllexport) int NMMF_AddSlider(const char* mod, const char*
     c.decimals = decimals;
     c.def = defaultValue;
     return AddControl(c);
+}
+extern "C" __declspec(dllexport) int NMMF_AddChoice(const char* mod, const char* page, const char* id, const char* label, const char* desc,
+                                                    const char* const* options, int count, int defaultIndex, int scope)
+{
+    Control c{mod ? mod : "", page ? page : "Main", id ? id : "", label ? label : "", desc ? desc : "", CKind::Choice, scope};
+    for (int i = 0; options && i < count; ++i)
+        if (options[i]) c.options.push_back(options[i]);
+    c.def = defaultIndex;
+    return AddControl(c);
+}
+extern "C" __declspec(dllexport) int NMMF_AddHeader(const char* mod, const char* page, const char* label)
+{
+    static int n = 0;
+    Control c{mod ? mod : "", page ? page : "Main", "_header_api" + std::to_string(++n), label ? label : "", "", CKind::Header, NMMF_GLOBAL};
+    return AddControl(c);
+}
+extern "C" __declspec(dllexport) int NMMF_GetIndex(const char* mod, const char* id)
+{
+    std::lock_guard lk(g_mx);
+    Control* c = (mod && id) ? Find(mod, id) : nullptr;
+    return c ? static_cast<int>(c->value) : -1;
+}
+extern "C" __declspec(dllexport) const char* NMMF_GetLanguage()
+{
+    static std::string l;
+    l = Language();
+    return l.c_str();
 }
 extern "C" __declspec(dllexport) int NMMF_GetBool(const char* mod, const char* id)
 {
