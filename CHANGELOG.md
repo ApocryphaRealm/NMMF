@@ -8,3 +8,6 @@
 - Console nmmf.list, nmmf.get, nmmf.set.
 ### Known
 - A slider with decimals shows its number rounded; the stored value is right.
+
+### Changed (2026-11-18, refinement - partial)
+- A slider with decimals shows them when the Options screen opens (the value is no longer re-sent every poll because of float rounding). After a click the number still shows rounded - known, under analysis.

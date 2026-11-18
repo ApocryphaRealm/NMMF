@@ -631,16 +631,26 @@ namespace
                     {
                         double snapped = Snap(*c, d);
                         Store(*c, snapped);
-                        if (std::fabs(snapped - d) > 1e-9) // show the stepped value on the row too
+                        // show the stepped value on the row too - but only for a real difference: the slider keeps a float,
+                        // so 1.6 reads back as 1.6000000238; a 1e-9 test re-sent the value every poll, and the row's own
+                        // handler then rewrote the number as a whole one ("1") - the decimal display fault (refinement)
+                        if (std::fabs(snapped - d) > c->step * 1e-3)
                         {
                             Buf s;
                             float f = static_cast<float>(snapped);
                             std::memcpy(s.b, &f, 4);
                             Reflect::Get().Call(r.entry, L"SetSliderValue", s.b, 4, sizeof(s.b));
                         }
-                        if (c->decimals > 0 && c->value != r.shown)
+                        if (c->decimals > 0)
                         {
-                            if (SetTextBlock(ObjField(r.entry, L"ValueText"), Widen(Text(*c)))) r.shown = c->value;
+                            // compare what the row SHOWS with what it should: the game's handler rewrites the number as a
+                            // whole one when the mouse lets go of the slider, after this poll has written it (refinement)
+                            UObject* tb = ObjField(r.entry, L"ValueText");
+                            FProperty* tp = tb ? FindProp(reinterpret_cast<UStruct*>(Reflect::Get().ClassOf(tb)), L"Text") : nullptr;
+                            std::wstring want = Widen(Text(*c));
+                            std::wstring shownText = tp ? Export(tp, reinterpret_cast<uint8_t*>(tb) + tp->GetOffset_Internal(), tb) : L"";
+                            bool same = shownText.find(L"\"" + want + L"\"") != std::wstring::npos;
+                            if (!same && SetTextBlock(tb, want)) r.shown = c->value;
                         }
                     }
                 }
