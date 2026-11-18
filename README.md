@@ -40,6 +40,6 @@ per control (`WidgetBlueprintLibrary.Create`, Name/Description as `INVTEXT(...)`
 = option 0, found by its string-table key); a slider's step goes on the inner slider. While a screen is up, the rows
 are read and a change is snapped, stored and announced.
 
-0.1.0 tested in game (TEST-RESULT-0.1.0.txt). Known: a slider with decimals shows its number rounded (the stored value
-is right). Not yet: choices, keybinds, headers, translations (eleven languages), per-save values over a save/load, a
+0.1.0 tested in game (TEST-RESULT-0.1.0.txt). A slider with decimals writes its own number as an engine-made text
+(the game's row shows whole numbers once moved; docs/DECIMAL-DISPLAY-FIX.txt). Not yet: choices, keybinds, headers, translations (eleven languages), per-save values over a save/load, a
 controller pass.
