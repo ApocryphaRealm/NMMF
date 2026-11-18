@@ -472,10 +472,12 @@ namespace
         });
         uint16_t ps = Reflect::Get().ParmsSizeOf(tb, L"SetText");
         if (!param || ps < 0x18 || ps > 0x40) return false;
+        // A real FText made by UE4SS and copied into the parameter block (the analysis showed the old INVTEXT import into
+        // an uninitialised buffer failed every time: "wrote 1 ok 0")
+        if (RC::Unreal::FText::StaticSize() > 0x40) return false;
+        RC::Unreal::FText ft(text.c_str());
         Buf b;
-        bool faulted = false;
-        std::wstring lit = L"INVTEXT(\"" + text + L"\")";
-        if (!SehImport(param, lit.c_str(), b.b + param->GetOffset_Internal(), tb, &faulted) || faulted) return false;
+        ft.CopyBorrowedTo(b.b + param->GetOffset_Internal());
         return Reflect::Get().Call(tb, L"SetText", b.b, ps, sizeof(b.b));
     }
 
@@ -650,7 +652,29 @@ namespace
                             std::wstring want = Widen(Text(*c));
                             std::wstring shownText = tp ? Export(tp, reinterpret_cast<uint8_t*>(tb) + tp->GetOffset_Internal(), tb) : L"";
                             bool same = shownText.find(L"\"" + want + L"\"") != std::wstring::npos;
-                            if (!same && SetTextBlock(tb, want)) r.shown = c->value;
+                            bool wrote = false, ok = false;
+                            if (!same)
+                            {
+                                wrote = true;
+                                ok = SetTextBlock(tb, want);
+                                if (ok) r.shown = c->value;
+                            }
+                            // ANALYSIS (rule 49, after four attempts): what the poll reads and does, for 3 s after a change
+                            static std::map<std::string, ULONGLONG> watchUntil;
+                            static std::map<std::string, double> lastVal;
+                            std::string key = c->mod + "." + c->id;
+                            ULONGLONG nowMs = GetTickCount64();
+                            if (lastVal.count(key) == 0 || lastVal[key] != c->value)
+                            {
+                                lastVal[key] = c->value;
+                                watchUntil[key] = nowMs + 3000;
+                            }
+                            if (nowMs < watchUntil[key])
+                            {
+                                std::wstring after = tp ? Export(tp, reinterpret_cast<uint8_t*>(tb) + tp->GetOffset_Internal(), tb) : L"";
+                                NRN_INFO("ANALYSIS %s: value %s, export before '%s', want '%s', same %d, wrote %d ok %d, export after '%s'", key.c_str(),
+                                         Text(*c).c_str(), Narrow(shownText).c_str(), Narrow(want).c_str(), same, wrote, ok, Narrow(after).c_str());
+                            }
                         }
                     }
                 }
