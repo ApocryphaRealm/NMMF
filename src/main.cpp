@@ -1052,13 +1052,15 @@ class NMMF : public RC::CppUserModBase
         g_errOut.vtbl = g_nopVtbl;
         g_mod = ModDir();
         std::wstring dir;
+        int logLevel = 2; // uLogLevel: 0 trace, 1 debug, 2 info, 3 warn, 4 error, 6 off
         for (const auto& raw : ReadLines(g_mod / "NMMF.ini"))
         {
             std::wstring l = Trim(raw);
             if (l.rfind(L"sLogDir=", 0) == 0) dir = Trim(l.substr(8));
+            if (l.rfind(L"uLogLevel=", 0) == 0) logLevel = _wtoi(l.c_str() + 10);
         }
-        Log::Get().Open((dir.empty() ? g_mod : fs::path(dir)) / "NMMF.log", 2);
-        Log::Get().Write(Level::Error, "NMMF v%s", NMMF_VERSION);
+        Log::Get().Open((dir.empty() ? g_mod : fs::path(dir)) / "NMMF.log", logLevel);
+        Log::Get().Write(Level::Error, "NMMF v%s - log level %d", NMMF_VERSION, logLevel);
         LoadPages();
     }
 
