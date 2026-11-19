@@ -3,7 +3,7 @@
 One shared mod-settings menu for the Norse overhaul (NORSE: Oath of Blood, UE4SS v4.0.0), drawn with the game's own
 UI: a **Mods** tab inside Norse's Options screen - at the title screen and in the pause menu during a mission - built at
 runtime from the game's own widget classes (its on/off row `WBP_OptionsEntry_Toggle_C`, the owner's choice of switch,
-and its slider row `WBP_OptionsEntry_Slider_C`). Not an overlay. Design survey: `4. plans/norse-realtime-combat-20261116/NMMF-SURVEY.md`;
+and its slider row `WBP_OptionsEntry_Slider_C`). Not an overlay. Design survey: the Norse overhaul plan;
 the Lua spike that proved the route: `docs/spike`.
 
 ## For mods
