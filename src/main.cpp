@@ -758,6 +758,30 @@ namespace
 
     bool g_menuOpen = false;
 
+    // 1.0.1: a mission map's HUD (WBP_Combat_HUD_Container_C) is up and the game is not paused
+    bool MissionRunning(UObject* ctx)
+    {
+        static UObject* gs = nullptr;
+        if (!gs) gs = FindObj(L"/Script/Engine.Default__GameplayStatics");
+        if (!gs) return false;
+        uint16_t ps = Reflect::Get().ParmsSizeOf(gs, L"IsGamePaused"); // (WorldContextObject @0) -> bool @8
+        Buf p;
+        std::memcpy(p.b, &ctx, 8);
+        if (ps != 9 || !Reflect::Get().Call(gs, L"IsGamePaused", p.b, ps, sizeof(p.b))) return false;
+        if (p.b[8]) return false; // paused: build now
+        std::vector<UObject*> huds;
+        try
+        {
+            RC::Unreal::UObjectGlobals::FindAllOf(L"WBP_Combat_HUD_Container_C", huds);
+        }
+        catch (...)
+        {
+        }
+        for (UObject* h : huds)
+            if (h && Alive(h, IndexOf(h)) && PathOfObj(h).find(L"Default__") == std::wstring::npos) return true;
+        return false;
+    }
+
     void Poll()
     {
         // new live Options screens (not the class's template, which FindAllOf also returns)
@@ -775,9 +799,32 @@ namespace
             if (!Alive(m, IndexOf(m)) || PathOfObj(m).find(L"/Engine/Transient") == std::wstring::npos) continue;
             if (std::any_of(g_built.begin(), g_built.end(), [&](const Built& b) { return b.menu == m; })) continue;
             if (g_controls.empty()) continue;
+            // 1.0.1 (2026-11-20): build the Mods tab when the Options screen is first shown, not when the game creates it.
+            // On a mission the game creates its Options screen at the first fight start; building ~12 rows of the game's
+            // entry widgets in that same frame made NorseRealtimeNative's hitch trace show a 183 ms fight-start frame
+            // (WBP_OptionsEntry_* 443 objects). The screen opens with the tab missing for at most one poll (250 ms).
+            // Two tries failed to see "not shown yet" (the run of 2026-11-20): the new screen is Visible itself and has a
+            // laid-out size at the fight start. What does hold: on a mission the Options screen is reached only through the
+            // pause menu, which pauses the game. So while the mission HUD is up and the game runs, the build waits for the
+            // pause (a hitch inside the pause menu is not felt); the title and the village build as before.
+            if (MissionRunning(m))
+            {
+                static UObject* lastWait = nullptr; // key-only: logged once per screen
+                if (lastWait != m)
+                {
+                    lastWait = m;
+                    NRN_INFO("%s created on a running mission - the Mods tab is built at the next pause", Narrow(ShortName(PathOfObj(m))).c_str());
+                }
+                continue;
+            }
             try
             {
+                LARGE_INTEGER f, t0, t1;
+                QueryPerformanceFrequency(&f);
+                QueryPerformanceCounter(&t0);
                 BuildIn(m);
+                QueryPerformanceCounter(&t1);
+                NRN_INFO("PERF: the Mods tab took %.1f ms to build", (t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(f.QuadPart));
             }
             catch (...)
             {

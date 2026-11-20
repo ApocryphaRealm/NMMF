@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 - 2026-11-20 - untested
+
+### Fixed
+- On a mission the Mods tab is built at the first pause instead of when the game creates its Options screen at the first fight start - that build (~163 ms) was a fight-start hitch; PERF line for the build time
+
 ## 1.0.0 - 2026-11-18 - working
 
 ### Added

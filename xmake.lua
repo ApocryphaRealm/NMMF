@@ -5,7 +5,7 @@
 -- Output: build\windows\x64\release\main.dll + main.pdb
 
 set_project("NMMF")
-local version = "1.0.0"
+local version = "1.0.1"
 set_version(version)
 set_xmakever("2.8.0")
 
